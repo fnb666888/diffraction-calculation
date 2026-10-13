@@ -1,0 +1,6 @@
+{
+  "shared": {"n": 512, "wavelength": 6.328e-7, "backend": "lightpipes"},
+  "diffraction": {"kind": "square", "method": "angular", "dx": 5e-6, "z": 0.02},
+  "talbot": {"dx": 1.25e-6, "period": 2e-5, "kind": "phase", "phase_depth": 1.5707963267948966, "dimensions": 2},
+  "holography": {"image_mode": "phase", "dx": 5e-6, "z": 0.1, "theta_deg": 1.5, "bandwidth": 8000}
+}

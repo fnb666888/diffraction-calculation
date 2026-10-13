@@ -1,0 +1,6 @@
+{
+  "shared": {"n": 512, "wavelength": 6.328e-7, "backend": "lightpipes", "seed": 7},
+  "diffraction": {"dx": 5e-6, "z": 0.02, "width": 2e-4, "kind": "circle", "method": "fresnel", "cdi_iterations": 400},
+  "talbot": {"dx": 1.25e-6, "period": 2e-5, "duty": 0.5, "kind": "binary", "dimensions": 1, "z_steps": 100},
+  "holography": {"dx": 5e-6, "z": 0.1, "theta_deg": 1.5, "bandwidth": 8000, "reference_amplitude": 1.5}
+}
