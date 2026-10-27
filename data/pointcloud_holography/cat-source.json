@@ -1,0 +1,10 @@
+{
+  "dataset": "PCL Implicit Shape Model tutorial point clouds (borrowed from Ohio dataset)",
+  "object": "cat",
+  "download_url": "https://raw.githubusercontent.com/PointCloudLibrary/data/master/tutorials/ism_train_cat.pcd",
+  "documentation": "https://pointclouds.org/documentation/tutorials/implicit_shape_model.html",
+  "repository": "https://github.com/PointCloudLibrary/data",
+  "repository_license": "BSD-3-Clause; preserve attribution to PCL/Ohio source",
+  "sha256": "de46e5eb530dc4dc4e93937aedae140dce12d22a51426ee3ea5da81ee6662b8c",
+  "bytes": 126700
+}

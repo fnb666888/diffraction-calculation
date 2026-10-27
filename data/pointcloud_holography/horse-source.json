@@ -1,0 +1,10 @@
+{
+  "dataset": "PCL Implicit Shape Model tutorial point clouds (borrowed from Ohio dataset)",
+  "object": "horse",
+  "download_url": "https://raw.githubusercontent.com/PointCloudLibrary/data/master/tutorials/ism_train_horse.pcd",
+  "documentation": "https://pointclouds.org/documentation/tutorials/implicit_shape_model.html",
+  "repository": "https://github.com/PointCloudLibrary/data",
+  "repository_license": "BSD-3-Clause; preserve attribution to PCL/Ohio source",
+  "sha256": "560beb5e3616512ad8f16dd54b8480ded4896404c914a1507c5c87e66953f425",
+  "bytes": 131382
+}

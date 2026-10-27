@@ -78,6 +78,13 @@ def validate(directory):
     cm, _ = cdi_demo(iterations=250)
     check("HIO 实测强度振幅残差", cm["hio_fourier_amplitude_residual"], 1e-4)
     check("HIO 歧义对齐后物体误差", cm["hio_aligned_complex_relative_error"], 1e-3)
+    from .abbe import AbbeConfig,run as run_abbe
+    abbe=run_abbe(AbbeConfig(n=128,filter_kind="none",numerical_aperture=.2,f2=.15))
+    check("阿贝4f倒像与放大率",abbe.metrics["unfiltered_vs_ideal_complex_error"],1e-12)
+    check("阿贝4f放大后功率守恒",abs(abbe.metrics["power_fraction_of_input"]-1),1e-12)
+    phase_abbe=run_abbe(AbbeConfig(n=128,filter_kind="phase_contrast",object_kind="phase_target"))
+    check("阿贝纯相位滤波功率守恒",abs(phase_abbe.metrics["filter_power_fraction_of_baseline"]-1),1e-12)
+    check("阿贝频谱与像面功率一致性",phase_abbe.metrics["spectral_power_balance_relative_error"],1e-12)
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     report = {"passed": all(c["passed"] for c in checks), "checks": checks,

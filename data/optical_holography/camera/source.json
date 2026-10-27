@@ -1,0 +1,10 @@
+{
+  "name": "Camera (photographer)",
+  "source": "scikit-image data.camera",
+  "author": "Lav Varshney",
+  "license": "CC0",
+  "page": "https://scikit-image.org/docs/0.20.x/api/skimage.data.html#skimage.data.camera",
+  "download": "https://raw.githubusercontent.com/scikit-image/scikit-image/v0.19.3/skimage/data/camera.png",
+  "sha256": "b0793d2adda0fa6ae899c03989482bff9a42d3d5690fc7e3648f2795d730c23a",
+  "description": "CC0 replacement Camera image. Gray values specify simulated object intensity; optical phase is assigned."
+}

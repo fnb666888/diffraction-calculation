@@ -4,6 +4,7 @@ The physical scene is never fed back into the solver as a screenshot. Geometry
 and the field are both constructed from the same SI parameters.
 """
 from pathlib import Path
+import gc
 import numpy as np
 from PIL import Image
 from matplotlib.patches import Circle, Rectangle
@@ -26,6 +27,8 @@ def input_description(result):
         label = {"circle": "不透光屏上的圆孔", "square": "不透光屏上的方孔", "slit": "不透光屏上的单缝"}[p["kind"]]
     elif result.module=="talbot":
         label = f'{p["dimensions"]}维'+("相位光栅" if p["kind"].startswith("phase") else "振幅光栅")
+    elif result.module=="abbe":
+        label = "阿贝弱相位物体" if p["object_kind"]=="phase_target" else "阿贝二维振幅靶标"
     else:
         label = "振幅及相位透明片（合成靶标）"
     return label
@@ -36,6 +39,8 @@ def _view_limit(result):
     window = (plane.x[-1]-plane.x[0]+plane.x[1]-plane.x[0])*1e6/2
     if result.module=="talbot":
         return min(window, p["period"]*4e6)
+    if result.module=="abbe" and not p.get("image_path"):
+        return min(window,p["object_width"]*.85e6)
     if result.module=="diffraction" and not p.get("image_path"):
         height = p.get("height") or (p["width"]*5 if p["kind"]=="slit" else p["width"])
         return min(window, max(p["width"], height)*.85e6)
@@ -96,6 +101,9 @@ def physical_input_figure(result):
                       (row-p["n"]//2-.5)*dx, (row+h-p["n"]//2-.5)*dx]
             front.imshow(gray, origin="lower", extent=extent, cmap="Blues" if p["image_mode"]=="phase" else "gray", vmin=0, vmax=1)
             description = ("透明片原始灰度图\n灰度 → 相位延迟，片内振幅为1" if p["image_mode"]=="phase" else "透明片原始灰度图\n灰度 → 振幅透过率")
+        elif result.module=="abbe" and p["object_kind"]=="phase_target":
+            front.imshow(np.angle(source.field),origin="lower",extent=extent,cmap="Blues",vmin=0,vmax=max(p["phase_depth"],1e-12))
+            description = "蓝色表示指定的相位延迟\n物体振幅处处为1"
         elif result.module=="talbot" and p["kind"].startswith("phase"):
             X, Y = np.meshgrid(plane.x, plane.x)
             def profile(a):
@@ -173,15 +181,19 @@ def export_input_visuals(result, directory):
     scene.savefig(scene_dir/"输入示意图.png")
     scene.savefig(scene_dir/"输入示意图.svg")
     plt.close(scene)
+    scene.clear()
     pictures = ["01_输入图/输入示意图.png"]
     formulas = model_figure(result)
     formulas.savefig(scene_dir/"透过率与复振幅表达式.png", bbox_inches="tight", pad_inches=.15)
     formulas.savefig(scene_dir/"透过率与复振幅表达式.svg", bbox_inches="tight", pad_inches=.15)
     plt.close(formulas)
+    formulas.clear()
     for mode, name in (("amplitude", "振幅"), ("phase", "相位"), ("both", "振幅与相位")):
         fig = field_figure(result, mode)
         fig.savefig(field_dir/(name+".png"))
         plt.close(fig)
+        fig.clear()
+        gc.collect()
         pictures.append("02_输入复振幅/"+name+".png")
     amplitude, phase = input_maps(result.planes["object"])
     np.savez_compressed(field_dir/"输入复场.npz", field=result.planes["object"].field,

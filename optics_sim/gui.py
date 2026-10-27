@@ -9,6 +9,7 @@ from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 from .cli import MODULES, config_for
 from .paths import OUTPUTS_DIR
+from .abbe import FILTER_LABELS,OBJECT_LABELS
 
 
 class SimulatorApp:
@@ -18,7 +19,7 @@ class SimulatorApp:
         self.messages = queue.Queue()
         self.report_path = None
         self.preview_source = None
-        self.root.title("光学模拟实验室 · 衍射 / 泰伯 / 离轴全息")
+        self.root.title("光学模拟实验室 · 衍射 / 泰伯 / 离轴全息 / 阿贝成像")
         self.root.geometry("1380x900")
         self.root.minsize(1100, 740)
         style = ttk.Style()
@@ -42,7 +43,7 @@ class SimulatorApp:
         self.shared_vars = {}
         for row, (key, label, default) in enumerate((("n", "每边像素 n（偶数）", shared.get("n", 512)),
                                                     ("wavelength_nm", "波长 λ（nm）", shared.get("wavelength", 632.8e-9)*1e9),
-                                                    ("backend", "菲涅耳传播后端", shared.get("backend", "lightpipes")))):
+                                                    ("backend", "传播后端（阿贝使用FFT）", shared.get("backend", "lightpipes")))):
             self.shared_vars[key] = self._input(common, row, label, default, ["lightpipes", "scipy"] if key=="backend" else None)
         self.tabs = ttk.Notebook(left)
         self.tabs.pack(fill="both", expand=True, padx=(0, 16), pady=(14, 8))
@@ -62,17 +63,51 @@ class SimulatorApp:
                        ("finite_fraction", "有效窗口比例（1为周期模型）", 1, None), ("z_steps", "x–z 扫描平面数", 1, None)],
             "holography": [("dx", "采样 dx（μm）", 1e6, None), ("z", "物体到记录面 z（m）", 1, None),
                            ("theta_deg", "参考角 θ（°）", 1, None), ("bandwidth", "物光带宽 B（m⁻¹）", 1, None),
-                           ("reference_amplitude", "参考波振幅", 1, None)]}
+                           ("reference_amplitude", "参考波振幅", 1, None)],
+            "abbe":[("dx","物面采样 dx（μm）",1e6,None),
+                    ("object_kind","默认物体",1,list(OBJECT_LABELS.values())),
+                    ("object_width","默认靶标尺寸（μm）",1e6,None),
+                    ("phase_depth","弱相位物体深度（rad）",1,None),
+                    ("f1","第一透镜 f₁（mm）",1e3,None),("f2","第二透镜 f₂（mm）",1e3,None),
+                    ("numerical_aperture","物方数值孔径 NA",1,None),
+                    ("filter_kind","频谱面滤波器",1,list(FILTER_LABELS.values())),
+                    ("cutoff","截止频率 / 高斯σ（mm⁻¹）",1e-3,None),
+                    ("inner_cutoff","带通内截止（mm⁻¹）",1e-3,None),
+                    ("rectangle_width","矩形频谱宽（mm⁻¹）",1e-3,None),
+                    ("rectangle_height","矩形频谱高（mm⁻¹）",1e-3,None),
+                    ("slit_width","方向狭缝宽（mm⁻¹）",1e-3,None),("angle_deg","狭缝长轴角度（°）",1,None),
+                    ("notch_x","陷波中心 νx（mm⁻¹）",1e-3,None),
+                    ("notch_y","陷波中心 νy（mm⁻¹）",1e-3,None),
+                    ("notch_radius","陷波半径（mm⁻¹）",1e-3,None),
+                    ("phase_radius","中心相位片半径（mm⁻¹）",1e-3,None),
+                    ("phase_shift","相位片延迟（rad）",1,None),
+                    ("vortex_charge","螺旋相位拓扑荷",1,None),
+                    ("shift_x","最终像面位移 x（μm）",1e6,None),
+                    ("shift_y","最终像面位移 y（μm）",1e6,None),
+                    ("image_samples","图片最长边样本数",1,None)]}
         self.specifications = specifications
         for name, (klass, run, label) in MODULES.items():
             tab = ttk.Frame(self.tabs, padding=12)
             self.tabs.add(tab, text=label)
             self.module_by_tab[str(tab)] = name
+            if name=="abbe":
+                canvas=tk.Canvas(tab,highlightthickness=0,width=405)
+                scroll=ttk.Scrollbar(tab,orient="vertical",command=canvas.yview)
+                scroll.pack(side="right",fill="y")
+                canvas.pack(side="left",fill="both",expand=True)
+                canvas.configure(yscrollcommand=scroll.set)
+                content=ttk.Frame(canvas)
+                window=canvas.create_window((0,0),window=content,anchor="nw")
+                content.bind("<Configure>",lambda event,view=canvas:view.configure(scrollregion=view.bbox("all")))
+                canvas.bind("<Configure>",lambda event,view=canvas,item=window:view.itemconfigure(item,width=event.width))
+                tab=content
             defaults = asdict(config_for(name, self.config))
             self.defaults[name] = defaults
             self.local_vars[name] = {}
             for row, (key, text, scale, choices) in enumerate(specifications[name]):
                 value = defaults[key]
+                if name=="abbe" and key in ("filter_kind","object_kind"):
+                    value=(FILTER_LABELS if key=="filter_kind" else OBJECT_LABELS)[value]
                 shown = value*scale if isinstance(value, (int, float)) else value
                 self.local_vars[name][key] = self._input(tab, row, text, shown, choices)
             row = len(specifications[name])
@@ -82,9 +117,15 @@ class SimulatorApp:
                 self.local_vars[name]["image_mode"] = self._input(tab, row+2, "图片透过率", defaults["image_mode"], ["amplitude", "phase"])
                 ttk.Button(tab, text="选择图片", command=lambda module=name: self.choose_image(module)).grid(row=row+3, column=1, sticky="ew", pady=5)
                 row += 4
+            if name=="abbe":
+                for key,text in (("filter_amplitude_path","自定义滤波器振幅图"),("filter_phase_path","自定义滤波器相位图")):
+                    self.local_vars[name][key]=self._input(tab,row+1,text,defaults.get(key) or "")
+                    ttk.Button(tab,text="选择遮罩图",command=lambda field=key:self.choose_image("abbe",field)).grid(row=row+2,column=1,sticky="ew",pady=4)
+                    row+=2
             help_text = {"diffraction": "圆孔、方孔、单缝及图片物体；解析解与 CDI 闭环自动生成。",
                          "talbot": "要求窗口含整数周期、每周期至少8像素。整距原像，半距横移半周期。",
-                         "holography": "默认按已知 B 带限物体。分离条件：3B < |fc| < fNyquist − B。"}[name]
+                         "holography": "默认按已知 B 带限物体。分离条件：3B < |fc| < fNyquist − B。",
+                         "abbe":"4f相干成像保留物理倒像。截止/尺寸只对相应滤波器生效；自定义遮罩中心为零频。沿右侧滚动条查看全部参数。"}[name]
             ttk.Label(tab, text=help_text, wraplength=365, foreground="#52657a").grid(row=row+1, column=0, columnspan=2, sticky="w", pady=12)
         self.run_button = ttk.Button(left, text="计算当前模块并导出", command=self.start)
         self.run_button.pack(fill="x", padx=(0, 16), pady=(8, 0))
@@ -117,10 +158,10 @@ class SimulatorApp:
         widget.grid(row=row, column=1, sticky="ew", pady=5)
         return variable
 
-    def choose_image(self, module):
+    def choose_image(self, module, key="image_path"):
         path = filedialog.askopenfilename(title="选择灰度/彩色图片", filetypes=[("图片", "*.png *.jpg *.jpeg *.bmp *.tif *.tiff"), ("全部文件", "*.*")])
         if path:
-            self.local_vars[module]["image_path"].set(path)
+            self.local_vars[module][key].set(path)
 
     def collect(self, name):
         values = dict(self.defaults[name])
@@ -128,11 +169,17 @@ class SimulatorApp:
                       backend=self.shared_vars["backend"].get())
         for key, text, scale, choices in self.specifications[name]:
             raw = self.local_vars[name][key].get().strip()
+            if name=="abbe" and key in ("filter_kind","object_kind"):
+                labels=FILTER_LABELS if key=="filter_kind" else OBJECT_LABELS
+                raw={label:kind for kind,label in labels.items()}[raw]
             old = values[key]
             values[key] = int(raw) if isinstance(old, int) else (float(raw)/scale if isinstance(old, float) else raw)
         if name != "talbot":
             values["image_path"] = self.local_vars[name]["image_path"].get().strip() or None
             values["image_mode"] = self.local_vars[name]["image_mode"].get()
+        if name=="abbe":
+            for key in ("filter_amplitude_path","filter_phase_path"):
+                values[key]=self.local_vars[name][key].get().strip() or None
         return MODULES[name][0](**values)
 
     def start(self):

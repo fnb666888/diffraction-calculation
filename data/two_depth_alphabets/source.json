@@ -1,0 +1,17 @@
+{
+  "repository": "https://github.com/yingsiqin/3DHologram",
+  "input_url": "https://raw.githubusercontent.com/yingsiqin/3DHologram/main/data/scenes/alphabets.png",
+  "depth_planes_m": [
+    0.08,
+    0.085
+  ],
+  "description": "Public two-depth E/H example; depth is assigned to left/right halves by source code, not measured from an RGB-D camera.",
+  "input_urls": [
+    "https://raw.githubusercontent.com/yingsiqin/3DHologram/main/data/scenes/alphabets.png",
+    "https://raw.githubusercontent.com/yingsiqin/3DHologram/main/data/scenes/alphabetsbig.png"
+  ],
+  "input_notes": {
+    "alphabets.png": "E and N",
+    "alphabetsbig.png": "E and H, matching the two-depth experimental example"
+  }
+}

@@ -155,6 +155,23 @@ def holography_plots(r, directory, pictures):
 
 
 def export_result(result, directory):
+    if result.module=="abbe":
+        from dataclasses import fields
+        from .abbe import AbbeConfig,FILTER_LABELS
+        from .workflow_catalog import Case,export_case
+        config={field.name:result.parameters[field.name] for field in fields(AbbeConfig)}
+        case=Case("abbe","阿贝成像_"+FILTER_LABELS[config["filter_kind"]],"abbe",config["filter_kind"],config)
+        # Capture the full configuration before producing the workflow recipe.
+        directory=Path(directory)
+        directory.mkdir(parents=True,exist_ok=True)
+        source_config=directory/"运行配置.json"
+        source_config.write_text(json.dumps({"abbe":config},ensure_ascii=False,indent=2),encoding="utf-8")
+        command=f'.\\.venv\\Scripts\\python.exe -m optics_sim abbe --config "{source_config.resolve()}"'
+        manifest=export_case(case,result,directory,reproduction_command=command)
+        pictures=["00_全流程图.png"]+[entry["path"] for entry in manifest["stages"]]
+        (directory/"figures.json").write_text(json.dumps(pictures,ensure_ascii=False,indent=2),encoding="utf-8")
+        (directory/"report.html").write_text((directory/"index.html").read_text(encoding="utf-8"),encoding="utf-8")
+        return directory/"report.html"
     directory = result.save(directory)
     from .input_visualization import export_input_visuals
     input_pictures = export_input_visuals(result, directory)
@@ -186,11 +203,11 @@ def export_index(directory, reports):
     directory = Path(directory)
     # Re-running one module in an existing experiment folder must keep the other
     # completed reports reachable from the same index.
-    labels = {"diffraction": "衍射计算", "talbot": "泰伯效应", "holography": "离轴全息"}
+    labels = {"diffraction": "衍射计算", "talbot": "泰伯效应", "holography": "离轴全息","abbe":"阿贝成像"}
     present = dict(reports)
     for name, label in labels.items():
         if (directory/name/"report.html").is_file():
             present[name] = label
     reports = [(name, present[name]) for name in labels if name in present]
     links = "".join(f'<li><a href="{name}/report.html">{label}</a></li>' for name, label in reports)
-    (directory/"index.html").write_text('<!doctype html><meta charset="utf-8"><title>光学模拟实验</title><style>body{font:18px/1.8 system-ui;margin:50px;color:#203047}a{color:#17639a}</style><h1>光学模拟实验</h1><p>共用 LightPipes 传播框架 · 三个独立模块</p><ul>'+links+'</ul>', encoding="utf-8")
+    (directory/"index.html").write_text('<!doctype html><meta charset="utf-8"><title>光学模拟实验</title><style>body{font:18px/1.8 system-ui;margin:50px;color:#203047}a{color:#17639a}</style><h1>光学模拟实验</h1><p>共用复光场框架 · 四个独立模块</p><ul>'+links+'</ul>', encoding="utf-8")

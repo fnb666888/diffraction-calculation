@@ -2,5 +2,6 @@
   "shared": {"n": 512, "wavelength": 6.328e-7, "backend": "lightpipes", "seed": 7},
   "diffraction": {"dx": 5e-6, "z": 0.02, "width": 2e-4, "kind": "circle", "method": "fresnel", "cdi_iterations": 400},
   "talbot": {"dx": 1.25e-6, "period": 2e-5, "duty": 0.5, "kind": "binary", "dimensions": 1, "z_steps": 100},
-  "holography": {"dx": 5e-6, "z": 0.1, "theta_deg": 1.5, "bandwidth": 8000, "reference_amplitude": 1.5}
+  "holography": {"n": 1024, "dx": 2.5e-6, "z": 0.02, "theta_deg": 5.25, "bandwidth": 44000, "reference_amplitude": 1.5, "image_path": "outputs/image_simulations/red_panda/02_照片离轴全息/01_输入图/原始输入图片.jpg", "image_mode": "amplitude", "image_samples": 512},
+  "abbe": {"n": 1024, "dx": 2.5e-6, "f1": 0.1, "f2": 0.1, "numerical_aperture": 0.03, "filter_kind": "lowpass", "cutoff": 12000, "image_path": "outputs/image_simulations/red_panda/03_照片阿贝成像_圆形低通/01_输入图/原始输入图片.jpg", "image_mode": "amplitude", "image_samples": 512}
 }

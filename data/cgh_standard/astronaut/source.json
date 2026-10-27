@@ -1,0 +1,9 @@
+{
+  "title": "Astronaut Eileen Collins",
+  "creator": "NASA",
+  "source": "https://scikit-image.org/docs/stable/api/skimage.data.html#skimage.data.astronaut",
+  "download_url": "https://raw.githubusercontent.com/scikit-image/scikit-image/v0.24.0/skimage/data/astronaut.png",
+  "original_source": "https://flic.kr/p/r9qvLn",
+  "license": "Public domain; no known copyright restrictions per scikit-image dataset documentation",
+  "sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5"
+}

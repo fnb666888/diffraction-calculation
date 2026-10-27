@@ -1,0 +1,16 @@
+{
+  "document": "D:/桌面/22063101 朱熙莱 全息课设 第三次大作业.docx",
+  "embedded_images": [
+    "word/media/image20.tiff",
+    "word/media/image21.tiff"
+  ],
+  "image_sha256": [
+    "72ee252be60216133d3c3d568dbd5f1c4349b7f2b6b118bf92b938f8eacea8bf",
+    "8764280989cd226713030c021a6dea874be0e254ee93ab509dc076cbdb612bdf"
+  ],
+  "assigned_distances_m": {
+    "cube": 0.04,
+    "ball": 0.06
+  },
+  "distances_are_new_simulation_settings": true
+}

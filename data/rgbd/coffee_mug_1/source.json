@@ -1,0 +1,13 @@
+{
+  "dataset": "University of Washington RGB-D Object Dataset",
+  "instance": "coffee_mug_1",
+  "source_url": "https://rgbd-dataset.cs.washington.edu/dataset/rgbd-dataset_pcd_ascii/coffee_mug_1.tar",
+  "dataset_page": "https://rgbd-dataset.cs.washington.edu/dataset/",
+  "readme_url": "https://rgbd-dataset.cs.washington.edu/dataset/rgbd-dataset_pcd_ascii/README.txt",
+  "archive_bytes": 37683438,
+  "archive_sha256": "488dd48863926f304b3a1750ca07d3b2d44c7851f685d205416073b0319a52be",
+  "selected_frame": "coffee_mug_1_1_100.pcd",
+  "pcd_sha256": "b2e260e0029900fd6f9afe64b25bda6f7c2d6b7517d1ab8a8cdeef90cc74677c",
+  "use": "non-commercial research/educational use",
+  "citation": "Kevin Lai, Liefeng Bo, Xiaofeng Ren, Dieter Fox. A Large-Scale Hierarchical Multi-View RGB-D Object Dataset. ICRA 2011."
+}

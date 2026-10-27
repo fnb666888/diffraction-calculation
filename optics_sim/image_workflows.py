@@ -2,6 +2,7 @@
 from dataclasses import asdict
 from pathlib import Path
 import argparse
+import gc
 import hashlib
 import html
 import json
@@ -88,6 +89,7 @@ def _comparison(diffraction, holography, directory, source_name):
     fig.supxlabel("灰度作为振幅透过率；相位0是模型假设。空间图采用图像坐标（y向下）。全息误差相对带限输入评价。", fontsize=11)
     fig.savefig(directory/"结果对比.png", dpi=150)
     plt.close(fig)
+    fig.clear()
 
 
 def _project_path(path):
@@ -98,7 +100,7 @@ def _project_path(path):
 
 
 def generate(image_path, directory, n=1024, dx=2.5e-6, wavelength=632.8e-9,
-             image_samples=512, z=.02, bandwidth=44000., theta_deg=5.25):
+             image_samples=512, z=.02, bandwidth=44000., theta_deg=5.25,include_abbe=False):
     source = Path(image_path).resolve(strict=True)
     with Image.open(source) as original:
         original_size = original.size
@@ -133,7 +135,8 @@ def generate(image_path, directory, n=1024, dx=2.5e-6, wavelength=632.8e-9,
             result.parameters["dense_far_field"] = True
             result.metrics["image_padding_check"] = _padding_check(result, config)
             result.notes.append("远场展示使用601×601样本的SciPy Zoom FFT精算局部频谱，不是图片插值；原始全范围FFT复场另存。")
-        command = f'.\\.venv\\Scripts\\python.exe -m optics_sim.image_workflows --image "{_project_path(capture)}" --output "{_project_path(directory)}"'
+        extra_arg=" --include-abbe" if include_abbe else ""
+        command = f'.\\.venv\\Scripts\\python.exe -m optics_sim.image_workflows --image "{_project_path(capture)}" --output "{_project_path(directory)}"'+extra_arg
         export_case(case, result, case_dir, reproduction_command=command)
         results.append(result)
         case_paths.append(case_dir.relative_to(directory).as_posix())
@@ -170,14 +173,80 @@ def generate(image_path, directory, n=1024, dx=2.5e-6, wavelength=632.8e-9,
     captured_source = directory/case_paths[0]/"01_输入图"/("原始输入图片"+source.suffix.lower())
     reproducible_source = _project_path(captured_source)
     reproducible_output = _project_path(directory)
+    heading="衍射、离轴全息与阿贝成像" if include_abbe else "衍射与离轴全息"
     (directory/"流程说明.md").write_text(
-        f"# {source.name}：衍射与离轴全息\n\n先打开index.html，两个案例分别保存全流程。\n\n"
+        f"# {source.name}：{heading}\n\n先打开index.html，各案例分别保存全流程。\n\n"
         "照片灰度指定为振幅透过率，初始相位为0。全息误差以有限带宽后的输入为真值；16位PNG经过峰值归一化，原始浮点强度在NPZ中。\n\n"
         f"衍射网格{diffraction_shared['n']}×{diffraction_shared['n']}，全息网格{n}×{n}，两者输入图片采样和物理尺寸相同。\n\n"
         "在项目根目录运行下列命令可重新计算；--image后应填写项目内捕获的原图路径：\n\n"
-        f"```powershell\n.\\.venv\\Scripts\\python.exe -m optics_sim.image_workflows --image \"{reproducible_source}\" --output \"{reproducible_output}\"\n```\n",
+        f"```powershell\n.\\.venv\\Scripts\\python.exe -m optics_sim.image_workflows --image \"{reproducible_source}\" --output \"{reproducible_output}\"{extra_arg}\n```\n",
         encoding="utf-8")
+    if include_abbe:
+        # Release the large propagation/recording fields before the next module.
+        del results,diffraction,holography,result,measured
+        gc.collect()
+        abbe_summary=_append_abbe(source,directory,n,dx,wavelength,image_samples)
+        summary["cases"].append(abbe_summary["folder"])
+        summary["abbe"]=abbe_summary
+        (directory/"计算摘要.json").write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding="utf-8")
+        page=page.replace("衍射与离轴全息模拟","衍射、离轴全息与阿贝成像模拟")
+        page=page.replace(" · 衍射与全息</title>"," · 三模块模拟</title>")
+        page=page.replace('</ol>',f'<li><a href="{abbe_summary["folder"]}/index.html">03_照片阿贝成像_圆形低通</a></li></ol>',1)
+        page=page.replace('<details><summary>计算摘要',
+                          '<h2>阿贝成像 · 频谱面滤波对比</h2><p>相同图片采样；对比图各自按峰值归一化并转回物方方向，原始物理倒像另存。<a href="03_照片阿贝成像_圆形低通/滤波对比/index.html">查看六种滤波的参数与数据</a></p><img src="03_照片阿贝成像_圆形低通/滤波对比/滤波效果对比.png"><details><summary>计算摘要')
+        start=page.index('<pre>')+len('<pre>')
+        end=page.index('</pre>',start)
+        page=page[:start]+html.escape(json.dumps(summary,ensure_ascii=False,indent=2))+page[end:]
+        (directory/"index.html").write_text(page,encoding="utf-8")
+        with (directory/"流程说明.md").open("a",encoding="utf-8") as instructions:
+            instructions.write("\n另含03_照片阿贝成像_圆形低通，及其内部六种频谱滤波对比。相同dx、图片样本和物理尺寸；照片初始相位均假设为0。原图不具有周期性，本次未作为泰伯自成像物体。\n")
     print("汇总入口："+str(directory/"index.html"), flush=True)
+    if directory.parent==(OUTPUTS_DIR/"image_simulations").resolve():
+        write_image_index(directory.parent)
+    return summary
+
+
+def write_image_index(directory):
+    """Index completed photograph experiments without changing their calculations."""
+    directory=Path(directory)
+    labels={"dog":"小狗","red_panda":"小熊猫","cat":"猫"}
+    items=[]
+    for folder in sorted(directory.iterdir()):
+        summary_file=folder/"计算摘要.json"
+        if not folder.is_dir() or not summary_file.is_file() or not (folder/"index.html").is_file():
+            continue
+        data=json.loads(summary_file.read_text(encoding="utf-8"))
+        label=labels.get(folder.name,data.get("source_name",folder.name))
+        capture=next((folder/data["cases"][0]/"01_输入图").glob("原始输入图片.*"),None)
+        thumbnail='<img src="'+html.escape(capture.relative_to(directory).as_posix(),quote=True)+'">' if capture else ''
+        cases=''.join('<li><a href="'+html.escape((folder/part/"index.html").relative_to(directory).as_posix(),quote=True)+'">'+html.escape(part)+'</a></li>' for part in data["cases"])
+        items.append('<section><h2><a href="'+html.escape(folder.name,quote=True)+'/index.html">'+html.escape(label)+'</a></h2>'+thumbnail+'<ul>'+cases+'</ul></section>')
+    page='<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>自定义图片模拟</title><style>body{max-width:1150px;margin:32px auto;padding:0 22px;font:17px/1.8 system-ui;color:#203047}img{max-width:360px;width:100%}section{margin:32px 0;padding:18px;background:#f3f6fa}a{color:#17639a}</style><h1>自定义图片模拟</h1><p>照片灰度作为振幅透过率，初始相位设为0。各模块保存独立完整流程、原图和复场数据。</p><p><a href="../workflows/index.html">全部标准案例</a> · <a href="../workflows/abbe.html">阿贝成像专题</a></p>'+''.join(items)
+    (directory/"index.html").write_text(page,encoding="utf-8")
+
+
+def _append_abbe(source,directory,n,dx,wavelength,image_samples):
+    from .abbe import AbbeConfig,run
+    from .abbe_comparison import generate as compare
+    folder="03_照片阿贝成像_圆形低通"
+    case_dir=directory/folder
+    capture=case_dir/"01_输入图"/("原始输入图片"+source.suffix.lower())
+    capture.parent.mkdir(parents=True,exist_ok=True)
+    if source!=capture:
+        shutil.copyfile(source,capture)
+    c=AbbeConfig(n=n,dx=dx,wavelength=wavelength,image_samples=image_samples,image_path=str(capture),filter_kind="lowpass",cutoff=12000.)
+    print("计算：照片阿贝成像与频谱滤波",flush=True)
+    result=run(c)
+    case=Case("03","照片阿贝成像_圆形低通","abbe","lowpass",asdict(c))
+    command=f'.\\.venv\\Scripts\\python.exe -m optics_sim.image_workflows --image "{_project_path(capture)}" --output "{_project_path(directory)}" --include-abbe'
+    export_case(case,result,case_dir,reproduction_command=command)
+    summary={"folder":folder,"filter_kind":c.filter_kind,"numerical_aperture":c.numerical_aperture,
+             "cutoff_per_m":c.cutoff,"n":n,"power_fraction_of_input":result.metrics["power_fraction_of_input"],
+             "spectral_power_balance_relative_error":result.metrics["spectral_power_balance_relative_error"]}
+    del result
+    gc.collect()
+    compare(capture,case_dir/"滤波对比",n=n,dx=dx,wavelength=wavelength,image_samples=image_samples)
+    print("完成："+str(case_dir/"index.html"),flush=True)
     return summary
 
 
@@ -188,8 +257,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--include-abbe",action="store_true",help="额外生成阿贝成像完整流程及六种频谱滤波对比")
     args = parser.parse_args()
-    generate(args.image, args.output or OUTPUTS_DIR/"image_simulations"/args.image.stem)
+    generate(args.image, args.output or OUTPUTS_DIR/"image_simulations"/args.image.stem,include_abbe=args.include_abbe)
 
 
 if __name__ == "__main__":

@@ -7,11 +7,13 @@ import sys
 from .diffraction import DiffractionConfig, run as diffraction
 from .talbot import TalbotConfig, run as talbot
 from .holography import HolographyConfig, run as holography
+from .abbe import AbbeConfig,FILTER_LABELS,run as abbe
 from .paths import OUTPUTS_DIR, VALIDATION_DIR
 
 MODULES = {"diffraction": (DiffractionConfig, diffraction, "衍射计算"),
            "talbot": (TalbotConfig, talbot, "泰伯效应"),
-           "holography": (HolographyConfig, holography, "离轴全息")}
+           "holography": (HolographyConfig, holography, "离轴全息"),
+           "abbe":(AbbeConfig,abbe,"阿贝成像")}
 
 
 def load_config(path=None):
@@ -19,7 +21,7 @@ def load_config(path=None):
         return {}
     data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
     if not isinstance(data, dict) or set(data)-{"shared", *MODULES}:
-        raise ValueError("配置顶层只允许 shared / diffraction / talbot / holography。")
+        raise ValueError("配置顶层只允许 shared / diffraction / talbot / holography / abbe。")
     shared = data.get("shared", {})
     if not isinstance(shared, dict) or set(shared)-{"n", "wavelength", "backend", "seed"}:
         raise ValueError("shared 只允许 n / wavelength / backend / seed。")
@@ -44,7 +46,7 @@ def main(argv=None):
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
-    p = argparse.ArgumentParser(description="共用 LightPipes 框架的衍射/泰伯/离轴全息模拟；所有配置文件采用 SI 单位。")
+    p = argparse.ArgumentParser(description="衍射/泰伯/离轴全息/阿贝成像模拟；配置文件采用SI单位，阿贝4f变换使用SciPy FFT。")
     p.add_argument("module", nargs="?", default="gui", choices=["gui", "all", "validate", *MODULES])
     p.add_argument("--config", type=Path, help="读取分模块 JSON 配置")
     p.add_argument("--output", type=Path, help="输出目录（默认项目 outputs/时间戳；validate 默认 outputs/validation）")
@@ -63,6 +65,19 @@ def main(argv=None):
     p.add_argument("--z-steps", type=int)
     p.add_argument("--theta-deg", type=float)
     p.add_argument("--bandwidth", type=float, help="物光圆形带宽 B，单位 m⁻¹")
+    p.add_argument("--filter",dest="filter_kind",choices=list(FILTER_LABELS))
+    p.add_argument("--f1-m",type=float)
+    p.add_argument("--f2-m",type=float)
+    p.add_argument("--na",dest="numerical_aperture",type=float)
+    p.add_argument("--cutoff",type=float,help="阿贝截止频率，m⁻¹；高斯滤波时为σ")
+    p.add_argument("--inner-cutoff",type=float,help="环形带通内截止频率，m⁻¹")
+    p.add_argument("--slit-width",type=float,help="方向狭缝的频率宽度，m⁻¹")
+    p.add_argument("--angle-deg",type=float)
+    p.add_argument("--phase-radius",type=float,help="中心相位片频率半径，m⁻¹")
+    p.add_argument("--phase-shift",type=float,help="中心相位片延迟，rad")
+    p.add_argument("--filter-amplitude",type=Path)
+    p.add_argument("--filter-phase",type=Path)
+    p.add_argument("--image-samples",type=int)
     args = p.parse_args(argv)
     try:
         data = load_config(args.config)
@@ -96,7 +111,12 @@ def main(argv=None):
                                 "image": ("image_path", 1), "image_mode": ("image_mode", 1)},
                 "talbot": {"period_um": ("period", 1e-6), "z_steps": ("z_steps", 1)},
                 "holography": {"z_m": ("z", 1), "theta_deg": ("theta_deg", 1), "bandwidth": ("bandwidth", 1),
-                               "image": ("image_path", 1), "image_mode": ("image_mode", 1)}}
+                               "image": ("image_path", 1), "image_mode": ("image_mode", 1)},
+                "abbe":{"image":("image_path",1),"image_mode":("image_mode",1),"image_samples":("image_samples",1),
+                        "filter_kind":("filter_kind",1),"f1_m":("f1",1),"f2_m":("f2",1),
+                        "numerical_aperture":("numerical_aperture",1),"cutoff":("cutoff",1),"inner_cutoff":("inner_cutoff",1),
+                        "slit_width":("slit_width",1),"angle_deg":("angle_deg",1),"phase_radius":("phase_radius",1),
+                        "phase_shift":("phase_shift",1),"filter_amplitude":("filter_amplitude_path",1),"filter_phase":("filter_phase_path",1)}}
             mapping.update(per_module[name])
             for flag, (key, scale) in mapping.items():
                 value = getattr(args, flag)
@@ -109,7 +129,8 @@ def main(argv=None):
                 if invalid:
                     raise ValueError(f"{name} 不支持参数：{', '.join(invalid)}")
             config = config_for(name, data, overrides)
-            print(f"计算 {label} · {config.n}×{config.n} · {config.backend}", flush=True)
+            engine="SciPy FFT" if name=="abbe" else config.backend
+            print(f"计算 {label} · {config.n}×{config.n} · {engine}", flush=True)
             result = run(config)
             report = export_result(result, output/name)
             reports.append((name, label))

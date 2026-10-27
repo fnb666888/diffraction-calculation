@@ -3,6 +3,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 import argparse
 import copy
+import gc
 import html
 import json
 import shutil
@@ -13,6 +14,7 @@ from .core import Grid, Plane, far_field, far_field_window, propagate, fft2c, tr
 from .diffraction import DiffractionConfig, run as diffraction, cdi_demo, square_fresnel, airy_intensity
 from .talbot import TalbotConfig, run as talbot
 from .holography import HolographyConfig, run as holography
+from .abbe import AbbeConfig, FILTER_LABELS, run as abbe
 from .objects import grating
 from .metrics import relative_error
 from .results import Result
@@ -56,13 +58,8 @@ def cases():
         out.append(Case(cid, title, "talbot", "talbot", asdict(TalbotConfig(kind=kind, dimensions=dims))))
     for cid, title, variant in (("13", "分数泰伯与波前曲率", "fractional"), ("14", "双光栅泰伯莫尔条纹", "tli"), ("15", "部分相干照明泰伯效应", "coherence")):
         out.append(Case(cid, title, "talbot", variant, asdict(TalbotConfig())))
-    for cid, title, variant, settings in (
-        ("16", "离轴全息复振幅透明片", "off_axis", {}),
-        ("17", "离轴全息振幅图片", "off_axis", {"image_path": str(base/"amplitude_target.png"), "image_mode": "amplitude"}),
-        ("18", "离轴全息相位图片", "off_axis", {"image_path": str(base/"phase_target.png"), "image_mode": "phase"}),
-        ("19", "四步相移数字全息", "phase_steps", {}),
-        ("20", "薄相位屏像差补偿", "aberration", {})):
-        out.append(Case(cid, title, "holography", variant, asdict(HolographyConfig(**settings))))
+    # Keep analytic apertures/gratings here. Holography and Abbe presentation
+    # examples now use captured photographs in outputs/image_simulations/.
     return out
 
 
@@ -75,6 +72,8 @@ def _compute(case, cache):
             cache[key] = talbot(TalbotConfig(**case.config))
         elif case.family=="holography":
             cache[key] = holography(HolographyConfig(**case.config))
+        elif case.family=="abbe":
+            cache[key] = abbe(AbbeConfig(**case.config))
         else:
             m, a = cdi_demo(case.config["n"], case.config["iterations"], case.config["seed"])
             g = Grid(case.config["n"], case.config["dx"], case.config["wavelength"])
@@ -114,10 +113,12 @@ class Writer:
         path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(path, bbox_inches="tight", pad_inches=.15)
         plt.close(fig)
+        fig.clear()
         entry = {"path": path.relative_to(self.directory).as_posix(), "title": title, "description": text}
         self.stages.append(entry)
         if overview:
             self.overview.append(entry)
+        gc.collect()
         return entry
 
     def scalar(self, data, x, folder, name, title, text="", phase=False, log=False, frequency=False, overview=True, limit=None):
@@ -139,6 +140,8 @@ class Writer:
             limit = min(limit, max(abs(plane.x)))
         elif self.case.family=="holography" and folder=="04_输出结果":
             limit = _view_limit(self.result)*1e-6
+        elif self.case.family=="abbe" and folder=="04_输出结果":
+            limit=_view_limit(self.result)*(c["f2"]/c["f1"])*1e-6
         elif self.case.family=="talbot" and self.case.variant in ("talbot", "fractional"):
             limit = c["period"]*4
         for mode in modes:
@@ -361,6 +364,99 @@ def _holography_stages(w):
             "另外演示已知相位屏数值逆补偿及共轭波经同屏相消。", "逆参考路径恢复共轭物场；本例限定为记录面薄屏，不代表未知体散射介质。"]
 
 
+def _abbe_layout(w):
+    from matplotlib.patches import Ellipse
+    c=w.case.config
+    f1,f2=c["f1"],c["f2"]
+    positions=np.array([0,f1,2*f1,2*f1+f2,2*(f1+f2)])
+    fig,ax=plt.subplots(figsize=(11,4.4),constrained_layout=True)
+    names=["物面 U0","第一透镜 L1","频谱面 H=P·M","第二透镜 L2","倒像面 Ui"]
+    height=.25
+    for slope,color in zip((0,-height/f1,height/f1),("#db754d","#3c9ca8","#a475c7")):
+        y1=height+slope*f1
+        slope1=slope-y1/f1
+        yf=y1+slope1*f1
+        y2=yf+slope1*f2
+        yi=y2+(slope1-y2/f2)*f2
+        ax.plot(positions*1e3,[height,y1,yf,y2,yi],color=color,lw=1.5)
+    ymax=.72*max(1,f2/f1)
+    for i,(z,name) in enumerate(zip(positions,names)):
+        if i in (1,3):
+            ax.add_patch(Ellipse((z*1e3,0),positions[-1]*1e3*.025,ymax*1.55,facecolor="#c6e6f0",alpha=.65))
+        else:
+            ax.axvline(z*1e3,color="#4c6780",lw=2,ls="--" if i==2 else "-")
+        ax.text(z*1e3,ymax*.95,name,ha="center",fontsize=10)
+    for left,right,label in zip(positions[:-1],positions[1:],["f1","f1","f2","f2"]):
+        ax.annotate("",(left*1e3,-ymax*.8),(right*1e3,-ymax*.8),arrowprops={"arrowstyle":"<->","color":"#52718b"})
+        ax.text((left+right)*.5e3,-ymax*.73,label,ha="center")
+    ax.axhline(0,color="#bec9d1",lw=.7)
+    ax.set(xlim=(-positions[-1]*60,positions[-1]*1060),ylim=(-ymax,ymax*1.15),xlabel="光轴位置 z (mm)",yticks=[],
+           title=f"阿贝4f相干成像 · f1={f1*1e3:g} mm，f2={f2*1e3:g} mm，横向放大率={-f2/f1:g}")
+    return fig
+
+
+def _abbe_stages(w):
+    r,c=w.result,w.case.config
+    freq=r.arrays["frequency_per_m"]
+    w.figure(_abbe_layout(w),"03_计算过程","4f光路","物面 → L1 → 频谱滤波 → L2 → 倒像面")
+    w.card("本例复场计算与滤波函数",model_for(r).propagation,"03_计算过程","4f计算公式",overview=False)
+    for key,prefix in (("fourier","第一透镜频谱"),("filtered_fourier","滤后频谱")):
+        field=r.planes[key].field
+        for mode in ("振幅","相位","强度"):
+            values=np.abs(field) if mode=="振幅" else (np.angle(field) if mode=="相位" else np.abs(field)**2)
+            if mode=="相位":
+                values=np.ma.masked_where(np.abs(field)<np.abs(field).max()*1e-5,values)
+            w.scalar(values,freq,"03_计算过程",prefix+"_"+mode,prefix+" · "+mode,
+                     phase=mode=="相位",log=mode=="强度",frequency=True,overview=mode=="强度",
+                     text="频率ν对应频谱面实际位置ξ=λf1ν；原始复场与ξ坐标另存。")
+    for key,prefix,overview in (("pupil","有限NA孔径",False),("filter_mask","附加滤波器",True),("effective_transfer","有效复透过率",False)):
+        mask=r.arrays[key]
+        w.scalar(np.abs(mask),freq,"03_计算过程",prefix+"_振幅",prefix+" · 振幅透过率",frequency=True,overview=overview)
+        if key!="pupil":
+            phase=np.ma.masked_where(np.abs(mask)<1e-12,np.angle(mask))
+            w.scalar(phase,freq,"03_计算过程",prefix+"_相位",prefix+" · 相位延迟",phase=True,frequency=True,overview=overview)
+    w.plane(r.planes["baseline_image"],"04_输出结果","无附加滤波倒像","相同NA · 无附加滤波基准",modes=("intensity",))
+    w.plane(r.planes["baseline_image"],"04_输出结果","无附加滤波倒像","相同NA · 无附加滤波基准",modes=("amplitude","phase"),overview=False)
+    w.plane(r.planes["image"],"04_输出结果","滤波后倒像",FILTER_LABELS[c["filter_kind"]]+" · 实际像面")
+    if c["filter_kind"]=="phase_contrast":
+        baseline=r.planes["baseline_image"].intensity
+        after=r.planes["image"].intensity
+        position=r.planes["image"].x*1e6
+        step=(position[1]-position[0])/2
+        extent=[position[0]-step,position[-1]+step]*2
+        fig,axes=plt.subplots(1,3,figsize=(13,4.3),constrained_layout=True)
+        vmin,vmax=min(baseline.min(),after.min()),max(baseline.max(),after.max())
+        for ax,values,title in zip(axes,(baseline,after,after-baseline),("无附加滤波 · 线性强度","中心相位片 · 线性强度","强度差 ΔI")):
+            if title.endswith("ΔI"):
+                bound=max(float(np.abs(values).max()),1e-12)
+                im=ax.imshow(values,origin="lower",extent=extent,cmap="RdBu_r",vmin=-bound,vmax=bound)
+            else:
+                im=ax.imshow(values,origin="lower",extent=extent,cmap="gray",vmin=vmin,vmax=vmax)
+            limit=_view_limit(r)*(c["f2"]/c["f1"])
+            ax.set(title=title,xlim=(-limit,limit),ylim=(-limit,limit),xlabel="x (μm)",ylabel="y (μm)")
+            plt.colorbar(im,ax=ax,fraction=.046,pad=.04,label="a.u.")
+        w.figure(fig,"05_验证","相衬线性强度对比","弱相位 → 可见强度对比（统一线性标度）")
+    x=r.planes["image"].x
+    limit=_view_limit(r)*(c["f2"]/c["f1"])
+    fig,ax=plt.subplots(figsize=(6.5,4.7),constrained_layout=True)
+    mid=len(x)//2
+    ax.plot(x*1e6,r.planes["baseline_image"].intensity[mid],label="相同NA，无附加滤波")
+    ax.plot(x*1e6,r.planes["image"].intensity[mid],label="滤波后")
+    ax.set(xlim=(-limit,limit),xlabel="像面 x (μm)",ylabel="强度 (a.u.)",title="像面中心截面 · 统一强度标度")
+    ax.legend()
+    w.figure(fig,"05_验证","像面截面对比","滤波前后同一强度标度",overview=False)
+    m=r.metrics
+    w.card("阿贝成像定量验证",[f"横向放大率：{m['magnification_signed']:g}；像面采样：{m['image_dx_m']*1e6:g} μm",
+        f"有限NA保留功率：{m['pupil_transmitted_power_fraction']:.6f}",
+        f"滤波后 / 无附加滤波功率：{m['filter_power_fraction_of_baseline']:.6f}",
+        f"频谱与像面功率相对差：{m['spectral_power_balance_relative_error']:.3g}"])
+    return ["按具体透过率函数构造物体，在单位平面波相干照明下形成输入复场。",
+            f"第一透镜将复场变换到频谱面，ξ=λf1ν；f1={c['f1']*1e3:g} mm。",
+            "频谱面以有限NA孔径P和所选复滤波器M相乘，H=P·M；遮光改变振幅，相位片改变相位。",
+            f"第二透镜再次作正向傅里叶变换，输出物理倒像，横向放大率-f2/f1={m['magnification_signed']:g}。",
+            "与相同NA的无附加滤波倒像比较，并核对频谱功率和像面功率；图像强度为复场模平方。"]
+
+
 def _overview(w):
     # Images are arranged in a snake so every neighbouring stage has a visible
     # direction arrow; full-resolution individual images are retained alongside.
@@ -393,10 +489,20 @@ def _overview(w):
     fig.savefig(w.directory/"00_全流程图.png", dpi=160)
     fig.savefig(w.directory/"00_全流程图.svg")
     plt.close(fig)
+    fig.clear()
+    gc.collect()
 
 
 def export_case(case, result, directory, reproduction_command=None):
     w = Writer(directory, case, result)
+    for key,label in (("filter_amplitude_path","滤波器振幅原图"),("filter_phase_path","滤波器相位原图")):
+        if result.parameters.get(key):
+            source=Path(result.parameters[key])
+            capture=Path(directory)/"03_计算过程"/(label+source.suffix.lower())
+            capture.parent.mkdir(parents=True,exist_ok=True)
+            if source.resolve()!=capture.resolve():
+                shutil.copyfile(source,capture)
+            result.parameters[key]=str(capture.resolve())
     input_paths = export_input_visuals(result, directory)
     if result.parameters.get("image_path"):
         source = Path(result.parameters["image_path"])
@@ -414,7 +520,7 @@ def export_case(case, result, directory, reproduction_command=None):
         w.stages.append(entry)
         w.overview.append(entry)
     steps = {"diffraction": _diffraction_stages, "cdi": _cdi_stages,
-             "talbot": _talbot_stages, "holography": _holography_stages}[case.family](w)
+             "talbot": _talbot_stages, "holography": _holography_stages,"abbe":_abbe_stages}[case.family](w)
     w.stages.sort(key=lambda entry: entry["path"].split("/")[0])
     w.overview.sort(key=lambda entry: entry["path"].split("/")[0])
     _overview(w)
@@ -445,11 +551,13 @@ def export_case(case, result, directory, reproduction_command=None):
 def _portable_parameters(parameters):
     """Store project-local source images without machine-specific absolute paths."""
     parameters = dict(parameters)
-    if parameters.get("image_path"):
-        source = Path(parameters["image_path"])
+    for key in ("image_path","filter_amplitude_path","filter_phase_path"):
+        if not parameters.get(key):
+            continue
+        source = Path(parameters[key])
         if source.is_absolute():
             try:
-                parameters["image_path"] = source.relative_to(PROJECT_ROOT).as_posix()
+                parameters[key] = source.relative_to(PROJECT_ROOT).as_posix()
             except ValueError:
                 pass
     return parameters
@@ -473,6 +581,10 @@ def _load_saved(directory):
             parameters["image_path"] = str(captured[0].resolve())
         elif not Path(parameters["image_path"]).is_absolute():
             parameters["image_path"] = str(PROJECT_ROOT/parameters["image_path"])
+    for key,label in (("filter_amplitude_path","滤波器振幅原图"),("filter_phase_path","滤波器相位原图")):
+        if parameters.get(key):
+            captured=sorted((directory/"03_计算过程").glob(label+".*"))
+            parameters[key]=str(captured[0].resolve()) if captured else str(PROJECT_ROOT/parameters[key])
     return Result(metadata["module"], parameters, metadata["metrics"], planes, arrays, metadata["notes"])
 
 
@@ -481,18 +593,40 @@ def generate(directory, selected=None, render_only=False):
     directory.mkdir(parents=True, exist_ok=True)
     chosen = [case for case in cases() if selected is None or case.id in selected]
     if not chosen:
-        raise ValueError("没有对应编号的模拟。编号范围01至20。")
+        raise ValueError("没有对应编号的模拟。孔径与光栅编号范围01至15；照片全息与阿贝使用 image_workflows 入口。")
     cache = {}
     for case in chosen:
         print("计算并整理："+case.folder, flush=True)
         result = _load_saved(directory/case.folder) if render_only else _compute(case, cache)
         export_case(case, result, directory/case.folder)
         print("完成："+case.folder, flush=True)
+        # Distinct Abbe masks have distinct configurations and no shared scans.
+        # Retaining all their full complex fields would grow memory per case.
+        if case.family=="abbe":
+            cache.clear()
+        del result
+        gc.collect()
     present = [case for case in cases() if (directory/case.folder/"index.html").is_file()]
-    links = "".join(f'<li><a href="{case.folder}/index.html">{case.folder}</a> · <a href="{case.folder}/00_全流程图.png">全流程图</a></li>' for case in present)
-    (directory/"index.html").write_text('<!doctype html><meta charset="utf-8"><title>每一种模拟的全流程</title><style>body{max-width:1050px;margin:40px auto;padding:0 24px;font:18px/1.9 system-ui;color:#203047}a{color:#17639a}</style><h1>每一种模拟的全流程</h1><p>每例一个独立文件夹：物理输入 → 输入振幅与相位 → 计算过程 → 输出结果 → 定量验证。</p><ol>'+links+'</ol>', encoding="utf-8")
-    (directory/"目录清单.json").write_text(json.dumps([{"id": case.id, "title": case.title, "folder": case.folder} for case in present], ensure_ascii=False, indent=2), encoding="utf-8")
+    write_indexes(directory,present)
     print("汇总入口："+str(directory.resolve()/"index.html"), flush=True)
+
+
+def write_indexes(directory,present):
+    directory=Path(directory)
+    links = "".join(f'<li><a href="{case.folder}/index.html">{case.folder}</a> · <a href="{case.folder}/00_全流程图.png">全流程图</a></li>' for case in present)
+    abbe_cases=[case for case in present if case.family=="abbe"]
+    photo_abbe = (directory.parent/'image_simulations/red_panda/03_照片阿贝成像_圆形低通/index.html').is_file()
+    extra='<p><a href="abbe.html">阿贝成像 · 真实照片频谱面滤波</a></p>' if abbe_cases or photo_abbe else ''
+    if (directory.parent/'image_simulations/index.html').is_file():
+        extra+='<p><a href="../image_simulations/index.html">自定义图片模拟 · 小狗 / 小熊猫 / 猫</a></p>'
+    (directory/"index.html").write_text('<!doctype html><meta charset="utf-8"><title>每一种模拟的全流程</title><style>body{max-width:1050px;margin:40px auto;padding:0 24px;font:18px/1.9 system-ui;color:#203047}a{color:#17639a}</style><h1>每一种模拟的全流程</h1><p>每例一个独立文件夹：物理输入 → 输入振幅与相位 → 计算过程 → 输出结果 → 定量验证。</p>'+extra+'<ol>'+links+'</ol>', encoding="utf-8")
+    (directory/"目录清单.json").write_text(json.dumps([{"id": case.id, "title": case.title, "folder": case.folder} for case in present], ensure_ascii=False, indent=2), encoding="utf-8")
+    if abbe_cases:
+        links=''.join(f'<li><a href="{case.folder}/index.html">{case.title}</a></li>' for case in abbe_cases)
+        page='<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>阿贝成像 · 频谱面调制</title><style>body{max-width:1200px;margin:32px auto;padding:0 22px;font:18px/1.8 system-ui;color:#203047}img{max-width:100%}a{color:#17639a}</style><h1>阿贝成像 · 频谱面调制</h1><p>物体复场 → 第一透镜傅里叶变换 → 有限NA孔径与复滤波器 → 第二透镜 → 物理倒像。</p><p><a href="index.html">全部模拟</a>；桌面界面选择“阿贝成像”，支持参数调整及自定义振幅/相位遮罩。</p><ol>'+links+'</ol>'
+        if (directory.parent/'abbe_comparison/dog/index.html').is_file():
+            page+='<h2>dog照片滤波对比</h2><p><a href="../abbe_comparison/dog/index.html">详细参数、功率及原始复场</a>。对比图按各图峰值归一化，并转回物方方向；原始物理倒像与强度标度另存。</p><img src="../abbe_comparison/dog/滤波效果对比.png">'
+        (directory/'abbe.html').write_text(page,encoding='utf-8')
 
 
 def main():

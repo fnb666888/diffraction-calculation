@@ -1,0 +1,9 @@
+{
+  "shared": {"n": 512, "wavelength": 6.328e-7, "backend": "scipy"},
+  "abbe": {
+    "n": 1024, "dx": 2.5e-6, "f1": 0.1, "f2": 0.1, "numerical_aperture": 0.03,
+    "image_path": "outputs/image_simulations/red_panda/03_照片阿贝成像_圆形低通/01_输入图/原始输入图片.jpg", "image_mode": "amplitude",
+    "filter_kind": "lowpass", "cutoff": 12000.0,
+    "inner_cutoff": 4000.0, "image_samples": 512
+  }
+}

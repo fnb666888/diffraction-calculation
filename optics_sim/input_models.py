@@ -108,6 +108,25 @@ def model_for(result):
                  "真值相位仅作评价；算法输入是强度、支集及非负振幅先验。"]
     elif p.get("image_path"):
         symbol, transmission, sampling, t, short = _image_model(result)
+    elif result.module=="abbe":
+        w = p["object_width"]
+        gx,gy=np.cos(2*np.pi*x/(w/10)),np.cos(2*np.pi*y/(w*.15))
+        W,S,PX,PY=map(number,(w*1e6,w*.25e6,w*.1e6,w*.15e6))
+        if p["object_kind"]=="phase_target":
+            phi=p["phase_depth"]*np.exp(-(x*x+y*y)/(2*(w/4)**2))*(.55+.45*gx*gy)
+            t=np.exp(1j*phi)
+            symbol=r"t_{\varphi}"
+            transmission=[math(r"\varphi_A="+number(p["phase_depth"])+r"\exp[-(x^2+y^2)/(2\cdot"+S+r"^2)]\,[0.55+0.45\cos(2\pi x/"+PX+r")\cos(2\pi y/"+PY+r")]"),
+                          math(r"t_\varphi=\exp(i\varphi_A),\quad |t_\varphi|=1")]
+            short=r"U_0=\exp(i\varphi_A)"
+        else:
+            bump=np.exp(-((x-.15*w)**2+(y+.1*w)**2)/(2*(w/16)**2))
+            t=(((np.abs(x)<=w/2)&(np.abs(y)<=w/2))*(.55+.2*gx+.15*gy+.08*bump)).astype(complex)
+            symbol="t_A"
+            transmission=[math(r"b=\exp[-((x-"+number(w*.15e6)+r")^2+(y+"+number(w*.1e6)+r")^2)/(2\cdot"+number(w/16*1e6)+r"^2)]"),
+                          math(r"t_A=\mathbf{1}_{|x|\leq "+number(w*.5e6)+r"}\mathbf{1}_{|y|\leq "+number(w*.5e6)+r"}[0.55+0.2\cos(2\pi x/"+PX+r")+0.15\cos(2\pi y/"+PY+r")+0.08b]")]
+            short="U_0=t_A"
+        sampling=[math(r"N="+str(n)+r",\quad\Delta x="+number(dx*1e6)+r"\,\mu\mathrm{m}"),"显示坐标x、y以μm计；按实际网格点取值。"]
     elif result.module=="diffraction":
         a = p["width"]
         b = p.get("height") or (a*5 if p["kind"]=="slit" else a)
@@ -215,7 +234,18 @@ def model_for(result):
                       math(r"I_H=|U_{\mathrm{obj}}+"+number(amplitude)+r"\exp[i2\pi("+number(carrier*1e-6)+r")x]|^2"),
                       math(r"t_H=I_H/\max(I_H)")]
 
-    if result.module=="diffraction":
+    if result.module=="abbe":
+        from .abbe import AbbeConfig, filter_expressions
+        c=AbbeConfig(**{key:p[key] for key in AbbeConfig.__dataclass_fields__ if key in p})
+        extra += [math(line) for line in filter_expressions(c)]
+        extra += [math(r"\xi=\lambda f_1\nu_x,\quad\eta=\lambda f_1\nu_y"),
+                  math(r"f_1="+number(c.f1*1e3)+r"\,\mathrm{mm},\quad f_2="+number(c.f2*1e3)+r"\,\mathrm{mm},\quad\mathrm{NA}="+number(c.numerical_aperture))]
+        if c.filter_kind=="custom":
+            extra.append("自定义振幅图灰度→AM，相位图灰度→Gφ；直接映射全频谱网格。空缺通道分别取1和0，原图随案例保存。")
+        propagation=[math(short),math(r"U_F=\frac{N\Delta x^2}{i\lambda f_1}\mathrm{DFT}_{2,c}[U_0]"),
+                     math(r"U_i=\frac{N\Delta\xi^2}{i\lambda f_2}\mathrm{DFT}_{2,c}[H U_F],\quad\Delta\xi=\frac{\lambda f_1}{N\Delta x}"),
+                     math(r"m=f_2/f_1="+number(c.f2/c.f1)+r",\quad x_i=m x_j,\quad M_{\mathrm{lateral}}=-m")]
+    elif result.module=="diffraction":
         z = p["z"]
         # lambda and z both converted to micrometres, preserving dimensionless phase.
         discrete_source = r"w_{a_x}(x_j)w_{a_y}(y_k)" if not p.get("image_path") and p["kind"] in ("square", "slit") else short.split("=", 1)[1]

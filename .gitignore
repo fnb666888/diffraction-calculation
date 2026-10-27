@@ -1,13 +1,79 @@
+# Python environments, bytecode and build products
 .venv/
+venv/
+env/
 __pycache__/
-.pytest_cache/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+/build/
+/dist/
+
+# Analysis, test and coverage caches
 .cache/
+.pytest_cache/
 .ruff_cache/
 .mypy_cache/
-*.py[cod]
-*.egg-info/
-outputs/
-build/
-dist/
+.hypothesis/
+.tox/
+.nox/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
+.ipynb_checkpoints/
+
+# Reproducible simulation results and presentation working files
+/outputs/
+/.pptx-build/
+/.codex-finalizer/
+/模板检查/
+/清洗后的PPT模板/
+node_modules/
+*.log
+*.tmp
+*.temp
+
+# Slide decks and templates are local artifacts, wherever they are saved.
+*.ppt
+*.pptx
+*.pptm
+*.pot
+*.potx
+*.potm
+*.pps
+*.ppsx
+*.ppsm
+
+# Optional external data: keep source metadata, not downloaded archives.
+# RGB-D redistribution terms require separate review; see THIRD_PARTY_NOTICES.md.
+/data/rgbd/**/*.pcd
+/data/rgbd/**/*.tar
+/data/rgbd/**/*.tar.gz
+/data/rgbd/**/*.tgz
+/data/rgbd/**/*.zip
+
+# Images extracted from a local course document have no open-license grant.
+/data/cgh_slm/two_planes/input-color.png
+/data/cgh_slm/two_planes/input-depth-levels.png
+
+# Local report handoffs and Office temporary files
+/docs/*.docx
+/docs/*.pptx
+~$*
+.~lock.*#
+
+# Local credentials and machine-specific configuration
+.env
+.env.*
+!.env.example
+!.env.sample
+/.vscode/
+/.idea/
+
+# Operating-system metadata
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
